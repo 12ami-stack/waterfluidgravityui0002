@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8"><title>Gravity Fluid UI - 流体追体験インターフェース</title>
+    <style>
+        :root { --bg: #030712; --panel: #0b1528; --accent-down: #00d2ff; --accent-up: #00ffaa; --p-color: #ffffff; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+        .title-zone { text-align: center; margin-bottom: 20px; }
+        h1 { margin: 0; font-size: 1.6rem; letter-spacing: 4px; font-weight: 300; background: linear-gradient(90deg, var(--accent-down), var(--accent-up)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hint { font-size: 0.85rem; color: #64748b; margin-top: 5px; }
+        #ui-wrapper { position: relative; width: 360px; height: 560px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), 0 0 40px rgba(0,210,255,0.1); border-radius: 24px; overflow: hidden; border: 2px solid #1e293b; background: var(--panel); }
+        canvas { display: block; }
+        /* オーバーレイ通知 */
+        #notification { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(3,7,18,0.95); backdrop-filter: blur(8px); flex-direction: column; align-items: center; justify-content: center; z-index: 10; animation: fadeIn 1.2s ease forwards; }
+        #notification { background-color: rgba(3,7,18,0.97); background-image: linear-gradient(rgba(251,191,36,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(251,191,36,0.07) 1px, transparent 1px); background-size: 24px 24px; }
+        #notification::before { content: ""; position: absolute; inset: 14px; border: 1.5px dashed rgba(251,191,36,0.45); border-radius: 14px; pointer-events: none; }
+        .tape { position: absolute; left: 0; width: 100%; height: 14px; background: repeating-linear-gradient(-45deg, #fbbf24 0 12px, #1c1917 12px 24px); opacity: 0.85; }
+        .tape.top { top: 0; } .tape.bottom { bottom: 0; }
+        .plan-badge { font-size: 0.7rem; letter-spacing: 4px; color: #fbbf24; border: 1px solid #fbbf24; border-radius: 4px; padding: 3px 10px; margin-bottom: 18px; }
+        #notification h2 { font-size: 2.2rem; font-weight: 300; color: #fbbf24; letter-spacing: 8px; margin: 0 0 6px 0; }
+        .plan-sub { font-size: 0.7rem; letter-spacing: 3px; color: #78716c; margin-bottom: 22px; }
+        .plan-steps { display: flex; align-items: center; gap: 8px; margin-bottom: 26px; font-size: 0.65rem; color: #57534e; }
+        .plan-steps span { padding: 3px 8px; border: 1px dashed #57534e; border-radius: 10px; }
+        .plan-steps span.now { border: 1px solid #fbbf24; color: #fbbf24; }
+        .plan-steps i { width: 10px; border-top: 1px dashed #57534e; }
+        #notification p { color: #a8a29e; font-size: 0.85rem; line-height: 1.7; text-align: center; margin: 0 0 26px 0; }
+        button { background: transparent; border: 1px solid var(--accent-down); color: var(--accent-down); padding: 12px 30px; font-size: 0.9rem; cursor: pointer; border-radius: 30px; letter-spacing: 1px; transition: all 0.9s cubic-bezier(.22,.61,.36,1); }
+        .float { animation: float 4.5s ease-in-out infinite; }
+        .float:nth-child(2) { animation-delay: -2.2s; }
+        @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        .key-hint { display: block; margin-top: 10px; text-align: center; font-size: 0.75rem; color: #64748b; letter-spacing: 2px; transition: opacity 0.9s ease; }
+        .overlay { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(3,7,18,0.95); backdrop-filter: blur(8px); flex-direction: column; align-items: center; justify-content: center; z-index: 10; animation: fadeIn 1.2s ease forwards; }
+        .overlay h2 { font-size: 1.6rem; font-weight: 300; color: #94a3b8; margin: 0 0 10px 0; letter-spacing: 3px; }
+        .overlay p { color: #64748b; font-size: 0.85rem; margin: 0 0 30px 0; }
+        .btn-row { display: flex; gap: 24px; }
+        .btn-row .opt { text-align: center; transition: opacity 0.9s ease; }
+        .btn-row button.picked { background: var(--accent-down); color: var(--bg); transform: scale(1.08); }
+        .btn-row .opt.dim { opacity: 0.25; }
+        #sleeping { background: rgba(0,0,0,0.98); }
+        #sleeping h2 { animation: breathe 5s ease-in-out infinite; }
+        @keyframes breathe { 0%,100% { opacity: 0.25; } 50% { opacity: 0.8; } }
+        button:hover { background: var(--accent-down); color: var(--bg); box-shadow: 0 0 20px var(--accent-down); }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <div class="title-zone">
+        <h1>Fluid Gravity UI</h1>
+        <div class="hint">操作：【← / →】キーで左右のレーンへ切り替え（中央レーンの最上部で1秒放置するとスリープ選択）</div>
+    </div>
+
+    <div id="ui-wrapper">
+        <canvas id="uiCanvas"></canvas>
+        <div id="notification">
+            <div class="tape top"></div><div class="tape bottom"></div>
+            <div class="plan-badge">DRAFT / WIP</div>
+            <h2 id="notif-title">企画中</h2>
+            <div class="plan-sub">UNDER PLANNING</div>
+            <div class="plan-steps"><span class="now">企画</span><i></i><span>設計</span><i></i><span>開発</span><i></i><span>公開</span></div>
+            <p id="notif-desc">この先は現在企画中です。<br>内容は未確定で、変更される場合があります。</p>
+            <div class="float">
+                <button onclick="resetUI()">UIを再起動</button>
+                <span class="key-hint">← →</span>
+            </div>
+        </div>
+        <div id="sleepmenu" class="overlay">
+            <h2>SLEEP?</h2>
+            <p>スリープに移行しますか</p>
+            <div class="btn-row">
+                <div class="float"><div class="opt" id="opt-sleep"><button onclick="chooseSleep('sleep')">スリープ</button><span class="key-hint">←</span></div></div>
+                <div class="float"><div class="opt" id="opt-back"><button onclick="chooseSleep('back')">戻る</button><span class="key-hint">→</span></div></div>
+            </div>
+        </div>
+        <div id="sleeping" class="overlay">
+            <h2>SLEEP</h2>
+            <p>← → どちらかで復帰</p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('uiCanvas'), ctx = canvas.getContext('2d'), notif = document.getElementById('notification');
+        const width = 360, height = 560;
+        
+        // 3本の縦レーン構造 (0: 左/下降, 1: 中央/ジェット上昇, 2: 右/下降)
+        let currentLane = 1; 
+        let targetLane = 1;
+        
+        // 深度（進行状況を表す重力の座標）
+        let depth = 50; 
+        let targetDepth = 50;
+        let flowOffset = 0;
+        let systemState = "active"; // active, shutdown, sleepMenu, sleeping
+        const sleepMenuEl = document.getElementById('sleepmenu'), sleepingEl = document.getElementById('sleeping');
+        let lastInput = 0, topSince = null, readyAt = 0, choosing = false;
+
+        // 進行度ステージ (3回下るプロセスを可視化するためのノード)
+        const stages = [
+            { name: "SURFACE (水面)", y: 60,  desc: "安定した浅瀬層" },
+            { name: "MIDSTREAM (中層)", y: 220, desc: "深度1: 権限セクション" },
+            { name: "ABYSS (深海)", y: 380, desc: "深度2: シャットダウン準備" },
+            { name: "TERMINAL (最深部)", y: 510, desc: "深度3: 完全停止" }
+        ];
+
+        function initUI() {
+            canvas.width = width; canvas.height = height;
+            notif.style.display = 'none';
+            sleepMenuEl.style.display = 'none'; sleepingEl.style.display = 'none';
+            choosing = false;
+            document.querySelectorAll('#sleepmenu .opt, #sleepmenu button').forEach(el => el.classList.remove('dim', 'picked'));
+            lastInput = performance.now(); topSince = null;
+            systemState = "active";
+            currentLane = 1; targetLane = 1;
+            depth = stages[0].y; targetDepth = stages[0].y;
+            if(!window.loopActive) { window.loopActive = true; updateLoop(); }
+        }
+
+        // 入力：左右キーのみ（画面ごとに役割が変わる）
+        window.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            const now = performance.now();
+            if (systemState === "active") {
+                lastInput = now;
+                if (e.key === 'ArrowLeft' && targetLane > 0) targetLane--;
+                if (e.key === 'ArrowRight' && targetLane < 2) targetLane++;
+                return;
+            }
+            if (e.repeat || now < readyAt) return; // せっかちに反応しない
+            if (systemState === "shutdown" || systemState === "sleeping") resetUI();
+            else if (systemState === "sleepMenu") chooseSleep(e.key === 'ArrowLeft' ? 'sleep' : 'back');
+        });
+
+        function showSleepMenu() {
+            systemState = "sleepMenu";
+            readyAt = performance.now() + 1200;
+            sleepMenuEl.style.display = 'flex';
+        }
+
+        function chooseSleep(choice) {
+            if (systemState !== "sleepMenu" || choosing) return;
+            choosing = true;
+            const picked = document.getElementById(choice === 'sleep' ? 'opt-sleep' : 'opt-back');
+            const other = document.getElementById(choice === 'sleep' ? 'opt-back' : 'opt-sleep');
+            picked.querySelector('button').classList.add('picked');
+            other.classList.add('dim');
+            setTimeout(() => {
+                sleepMenuEl.style.display = 'none';
+                if (choice === 'sleep') {
+                    systemState = "sleeping";
+                    readyAt = performance.now() + 1200;
+                    sleepingEl.style.display = 'flex';
+                } else {
+                    resetToActiveKeepPosition();
+                }
+            }, 1000);
+        }
+
+        function resetToActiveKeepPosition() {
+            choosing = false;
+            document.querySelectorAll('#sleepmenu .opt, #sleepmenu button').forEach(el => el.classList.remove('dim', 'picked'));
+            lastInput = performance.now(); topSince = null;
+            systemState = "active";
+        }
+
+        // 状態更新ロジック（物理・流体挙動）
+        function updateMechanism() {
+            if (systemState !== "active") return;
+
+            // 1. 横方向のレーン移動（ぬるっとした追従）
+            currentLane += (targetLane - currentLane) * 0.25;
+
+            // 2. 現在のレーンに応じた「重力」と「ジェット水流」の処理
+            let roundLane = Math.round(currentLane);
+            
+            if (roundLane === 1) {
+                // 【中央レーン】：強烈なジェット上昇水流（トップへ押し戻す）
+                targetDepth -= 8;
+                if (targetDepth < stages[0].y) targetDepth = stages[0].y;
+            } else {
+                // 【左右レーン】：下方向への重力。一定ゾーンに留まると自然と吸い込まれるように次の深度へ
+                targetDepth += 1.5; 
+                
+                for (let i = 0; i < stages.length - 1; i++) {
+                    if (depth > stages[i].y + 20 && depth < stages[i+1].y) {
+                        if (targetDepth < stages[i+1].y) {
+                            targetDepth += 2;
+                        }
+                    }
+                }
+            }
+
+            // 実際の深度座標を滑らかにターゲットへ近づける
+            depth += (targetDepth - depth) * 0.1;
+
+            // 中央レーンの最上部で1秒放置 → スリープ選択
+            const now = performance.now();
+            if (roundLane === 1 && Math.abs(depth - stages[0].y) < 3) {
+                if (topSince === null) topSince = now;
+                if (now - topSince >= 1000 && now - lastInput >= 1000) { showSleepMenu(); return; }
+            } else {
+                topSince = null;
+            }
+
+            // 最深部（シャットダウン）に到達したか
+            if (depth >= stages[3].y - 5) {
+                systemState = "shutdown";
+                readyAt = performance.now() + 1500;
+                setTimeout(() => { notif.style.display = 'flex'; }, 300);
+            }
+        }
+
+        // 画面描画
+        function drawUI() {
+            ctx.clearRect(0, 0, width, height);
+            flowOffset = (flowOffset + 2) % 60;
+
+            const laneWidth = width / 3;
+            const accentDown = varColor('--accent-down');
+            const accentUp = varColor('--accent-up');
+
+            // 1. 背景のストリーム（水流・重力の向き）を描画
+            for (let i = 0; i < 3; i++) {
+                ctx.fillStyle = i === 1 ? '#07201a' : '#051122';
+                ctx.fillRect(i * laneWidth, 0, laneWidth, height);
+                
+                // レーンの境界線
+                ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+                ctx.strokeRect(i * laneWidth, 0, laneWidth, height);
+
+                // 流速ラインのアニメーション
+                ctx.strokeStyle = i === 1 ? 'rgba(0, 255, 170, 0.12)' : 'rgba(0, 210, 255, 0.08)';
+                ctx.lineWidth = 1.5;
+                for (let y = -60; y < height; y += 60) {
+                    ctx.beginPath();
+                    let currY = i === 1 ? y + (60 - flowOffset) : y + flowOffset;
+                    ctx.moveTo(i * laneWidth + laneWidth/2, currY);
+                    ctx.lineTo(i * laneWidth + laneWidth/2, currY + 20);
+                    ctx.stroke();
+                }
+            }
+
+            // 2. 経過を示す「深度インジケーター（3段階のチェックポイント）」
+            stages.forEach((stage, idx) => {
+                let isPassed = depth >= stage.y;
+                ctx.fillStyle = isPassed ? (idx === 3 ? '#ef4444' : accentDown) : '#334155';
+                
+                // ノード（節目）の円
+                ctx.beginPath(); ctx.arc(width/2 - 100, stage.y, 6, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(width/2 + 100, stage.y, 6, 0, Math.PI*2); ctx.fill();
+
+                // テキスト情報
+                ctx.font = '10px sans-serif'; ctx.fillStyle = isPassed ? '#94a3b8' : '#475569';
+                ctx.fillText(stage.name, 35, stage.y + 4);
+                
+                // 現在位置の横ライン
+                ctx.strokeStyle = 'rgba(30, 41, 59, 0.5)'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(110, stage.y); ctx.lineTo(250, stage.y); ctx.stroke();
+            });
+
+            // 3. 現在の深度テキスト・ステータス
+            let currentStage = stages[0];
+            for(let i=0; i<stages.length; i++) { if(depth >= stages[i].y - 10) currentStage = stages[i]; }
+            ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 12px sans-serif'; ctx.fillText(currentStage.name, 125, height - 45);
+            ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.fillText(currentStage.desc, 125, height - 28);
+
+            // 4. 自機（現在の選択ポインタとなる光の雫）
+            let playerX = currentLane * laneWidth + laneWidth / 2;
+            let isGoingUp = Math.round(currentLane) === 1;
+            
+            ctx.fillStyle = '#ffffff';
+            
+            ctx.beginPath();
+            ctx.arc(playerX, depth, 14, 0, Math.PI * 2);
+            ctx.fill();
+
+            // コアの中心点
+            ctx.fillStyle = isGoingUp ? accentUp : accentDown;
+            ctx.beginPath(); ctx.arc(playerX, depth, 5, 0, Math.PI * 2); ctx.fill();
+        }
+
+        function varColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+        function resetUI() { initUI(); }
+
+        function updateLoop() {
+            updateMechanism();
+            drawUI();
+            requestAnimationFrame(updateLoop);
+        }
+
+        initUI();
+    </script>
+</body>
+</html>
